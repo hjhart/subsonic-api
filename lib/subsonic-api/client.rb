@@ -11,18 +11,23 @@ module Subsonic
         '4.3.1' => '1.5.0'
     }
 
-    attr_accessor :url, :version, :api_version, :user
+    attr_accessor :url, :version, :api_version, :user, :uri_prepend
 
     def initialize(url, username, password, options={})
       pass_prefix = options[:enc] ? "enc:" : ""
       version = @version = options[:version] || API_VERSION.values.last
       @api_version = API_VERSION[@version] || version
+
+      if(@api_version == '1.5.0')
+        @uri_prepend = '/rest'
+      end
+
       format = options[:format] || "json"
 
       Struct.new("User", :username, :password)
       @user = Struct::User.new(username, "#{pass_prefix}#{password}")
       username, password = @user.username, @user.password
-
+  
       self.class.class_eval do
         base_uri url
         default_params :u => username, :p => password,
@@ -31,24 +36,19 @@ module Subsonic
     end
 
     def now_playing
-      response = self.class.get('/rest/getNowPlaying.view')
+      response = self.class.get(@uri_prepend + '/getNowPlaying.view')
       if response.code == 200
-        now_playing = response.parsed_response['subsonic-response']['nowPlaying']['entry']
-        if now_playing.is_a? Array
-          now_playing.map { |entry| "#{entry['artist']} - #{entry['title']}" }
-        else
-          "#{now_playing['artist']} - #{now_playing['title']}"
-        end
+        response.parsed_response['subsonic-response']['nowPlaying']['entry']
       end
     end
 
     def say(message)
-      response = self.class.post('/rest/addChatMessage.view', :query => {:message => message})
+      response = self.class.post(@uri_prepend + '/addChatMessage.view', :query => {:message => message})
       response.code == 200 ? message : false
     end
 
     def messages
-      response = self.class.get('/rest/getChatMessages.view')
+      response = self.class.get(@uri_prepend + '/getChatMessages.view')
       if response.code == 200
         chat_messages = response.parsed_response['subsonic-response']['chatMessages']['chatMessage']
         chat_messages.map do |msg|
@@ -59,20 +59,16 @@ module Subsonic
     end
 
     def random_songs
-      response = self.class.get('/rest/getRandomSongs')
+      response = self.class.get(@uri_prepend + '/getRandomSongs')
       if response.code == 200
-        songs = response['subsonic-response']['randomSongs']['song']
-        songs.map do |song|
-          {:song => "#{song['artist']} - #{song['title']}",
-           :id => song['id']}
-        end
+        response['subsonic-response']['randomSongs']['song']
       end
     end
 
     def add_song(*ids)
       count = ids.length
       ids = ids.join(',').gsub(/\s/, '')
-      response = self.class.post('/rest/jukeboxControl.view', :query => {:action => 'add', :id => ids})
+      response = self.class.post(@uri_prepend + '/jukeboxControl.view', :query => {:action => 'add', :id => ids})
       response.code == 200 ? "#{count} songs added" : false
     end
 
